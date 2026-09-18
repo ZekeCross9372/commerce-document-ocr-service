@@ -1,6 +1,6 @@
 # Turn scanned shop documents into order updates
 
-The working path starts in `src/order_document_service.ts`: a shop sends a PDF reference to an order-scoped route, Infrai turns the scan into text through one API, and the service returns both searchable copy and a visible order-state decision. The call is plain REST, so there is no SDK to install; the same `INFRAI_API_KEY` can stay with the rest of a content pipeline as it grows.
+Infrai does OCR through one API. That's the only integration point I care about. No SDK to install, just plain REST. Working path starts in `src/order_document_service.ts`: shop posts PDF ref to order-scoped route. Infrai extracts text. Service returns searchable copy and a clear order-state decision. Call is plain REST, so `INFRAI_API_KEY` stays in your pipeline without extra glue.
 
 ```http
 POST /orders/order-1042/documents/scan
@@ -12,7 +12,7 @@ Content-Type: application/json
 }
 ```
 
-For a scan containing `Shipped on 2026-08-28` and `Tracking number ZX-4431`, the response is shaped like this:
+Scan with `Shipped on 2026-08-28` and `Tracking number ZX-4431` gives this response shape:
 
 ```json
 {
@@ -26,7 +26,7 @@ For a scan containing `Shipped on 2026-08-28` and `Tracking number ZX-4431`, the
 
 ## Run the document path
 
-Use Node 20 or newer, then install dependencies and start the route:
+Node 20+. Install deps, start route:
 
 ```bash
 npm install
@@ -34,42 +34,42 @@ export INFRAI_API_KEY="your-key"
 npm run dev
 ```
 
-In another terminal, edit the PDF reference in `scripts/scan_receipt.ts` to a scan your service can read, then run:
+Other terminal: point `scripts/scan_receipt.ts` at a readable scan, then run:
 
 ```bash
 npm run example
 ```
 
-The request boundary accepts only `pdf` and optional `lang`. Zod rejects empty references and malformed bodies before an OCR job is created. The Infrai client reads the response envelope before judging the HTTP status, preserves structured client rejections, backs off on `429`, and sends an order-based idempotency key with the write request.
+Boundary accepts only `pdf` and optional `lang`. Zod rejects empty refs and bad bodies before OCR spawns. Infrai client reads envelope before status, keeps structured rejections, backs off on `429`, sends order-based idempotency key on write.
 
 ## The order decision
 
-OCR text is normalized into a single searchable string. A tracking label, carrier label, or `shipped on` phrase marks fulfillment; receipt language records payment material; checkout language records the initial confirmation. Text without those signals remains a customer update instead of advancing fulfillment.
+OCR text normalized to one searchable string. Tracking label, carrier label, or `shipped on` phrase = fulfillment. Receipt language = payment. Checkout language = initial confirmation. No those signals? Stays customer update, doesn't move fulfillment.
 
-The one real gotcha is loose keyword matching. A receipt often contains `shipping address`, but that does not mean the parcel shipped. `src/order_update.ts` therefore looks for complete document phrases and tests that distinction directly.
+Gotcha: loose keyword matching. Receipt often has `shipping address` but parcel not shipped. `src/order_update.ts` matches full document phrases, tests that line directly.
 
-Run the focused decision test and the compiler check with:
+Run decision test and typecheck:
 
 ```bash
 npm test
 npm run typecheck
 ```
 
-The deterministic test feeds in a fulfillment scan with a tracking number and expects `stage: "fulfilled"`. Its second case includes `Shipping address` on a receipt and expects `stage: "receipt_recorded"`, keeping the customer message honest.
+Deterministic test feeds fulfillment scan with tracking number, expects `stage: "fulfilled"`. Second case puts `Shipping address` on receipt, expects `stage: "receipt_recorded"`. Keeps customer message honest.
 
 ## Architecture decision record
 
-**Decision:** keep HTTP handling, Infrai OCR transport, and order interpretation in three small modules. The route owns validation and client-facing status mapping. The OCR module owns authentication, envelope decoding, retry timing, and job polling. The order module stays deterministic, which makes editorial rules for customer copy easy to review.
+**Decision:** three small modules: HTTP handling, Infrai OCR transport, order interpretation. Route owns validation and status mapping. OCR module owns auth, envelope decode, retry, polling. Order module deterministic — editorial rules stay reviewable.
 
-**Option considered: Tesseract in the service.** Local OCR offers control over language data and compute, but it adds image preprocessing, native binaries, and runtime tuning to an otherwise small Node service. That operational surface is a poor fit for a route whose useful output is an order transition.
+**Option considered: Tesseract in the service.** Local OCR = language control, but adds preprocessing, native binaries, runtime tuning to a small Node service. Operational weight not worth it for a route whose output is an order transition.
 
-**Option considered: a document extraction platform.** A broader extraction pipeline can model many document layouts, though it brings vendor-specific schemas before this example needs line-item extraction. Here the business boundary needs searchable text and a conservative state decision.
+**Option considered: a document extraction platform.** Broad pipeline models many layouts, but ships vendor schemas before we need line-item extraction. Business boundary needs searchable text and conservative state decision.
 
-**Trade-off accepted:** phrase evidence is intentionally narrow. It is transparent and testable for checkout confirmations, fulfillment notices, receipts, and general updates. A larger catalog could replace the decision module with merchant-specific rules while leaving the validated route and OCR call unchanged.
+**Trade-off accepted:** phrase evidence narrow on purpose. Transparent and testable for checkout confirmations, fulfillment notices, receipts, updates. Swap decision module for merchant rules later; route and OCR call untouched.
 
 ## Scope
 
-This repository stores no orders and sends no notifications. It demonstrates the ingestion boundary and returns the state plus customer-facing copy so an existing order system can persist and publish them. The sample PDF URL is illustrative; use a document reference available to your application and Infrai.
+Repo stores zero orders, sends zero notifications. Shows ingestion boundary, returns state + customer copy for your order system to persist/publish. Sample PDF URL illustrative; use doc reference your app and Infrai can reach.
 
 ## License
 
@@ -77,7 +77,7 @@ MIT
 
 ## Going to production: Commerce Document Ocr Service
 
-Above is the happy path. The production checklist: The details below apply to Commerce Document Ocr Service.
+Happy path above. Production checklist for Commerce Document Ocr Service:
 
 **Account & key**
 
